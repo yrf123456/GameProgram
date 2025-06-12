@@ -13,8 +13,13 @@ namespace DefaultNamespace
         public override void Start()
         {
             base.Start();
+            canMove = false;
             attackRange = fixedAttackRange; // Override the value modified by SetDifficulty() in the base class
             enemyState = Constant.EnemyState.Idle;
+            if (TryGetComponent<Rigidbody2D>(out var rigid))
+            {       
+                rigid.constraints = RigidbodyConstraints2D.FreezeAll;
+            }       
         }
 
         public override void Attack()

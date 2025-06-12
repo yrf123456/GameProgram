@@ -45,7 +45,6 @@ namespace DefaultNamespace
 
         private bool isChasingPlayer = false;
 
-        // Timer for timed patrol direction change
         private float patrolTimer = 0f;
         private float patrolDirectionDuration = 1f;
 
@@ -76,50 +75,55 @@ namespace DefaultNamespace
             float distanceToPlayer = Vector2.Distance(transform.position, player.position);
             isChasingPlayer = false;
 
-            if (distanceToPlayer < attackRange)
-            {
-                enemyState = Constant.EnemyState.ChaseLookOnly;
-                FacePlayer();
-                rb.velocity = Vector2.zero;
+            // ==== Simulated Behavior Tree Structure ====
+            // Root Selector Node:
+            // 1. Sequence: If player visible AND in range → Attack
+            // 2. Sequence: If player visible → Chase
+            // 3. Fallback: Patrol
 
-                if (Time.time >= nextAttackTime)
+            if (CanSeePlayer())
+            {
+                if (IsInAttackRange(distanceToPlayer))
                 {
-                    if (bossEnemyState == BossEnemyState.FirstStage)
+                    enemyState = Constant.EnemyState.ChaseLookOnly;
+                    FacePlayer();
+                    rb.velocity = Vector2.zero;
+
+                    if (Time.time >= nextAttackTime)
                     {
-                        AttackMelee();
-                        nextAttackTime = Time.time + attackMeleeRate;
-                        currAttackTime = Time.time;
-                    }
-                    else
-                    {
-                        Attack();
-                        nextAttackTime = Time.time + attackRate;
-                        currAttackTime = Time.time;
+                        if (bossEnemyState == BossEnemyState.FirstStage)
+                        {
+                            AttackMelee();
+                            nextAttackTime = Time.time + attackMeleeRate;
+                            currAttackTime = Time.time;
+                        }
+                        else
+                        {
+                            Attack();
+                            nextAttackTime = Time.time + attackRate;
+                            currAttackTime = Time.time;
+                        }
                     }
                 }
-            }
-            else if (distanceToPlayer < viewRange)
-            {
-                enemyState = Constant.EnemyState.Move;
-                isChasingPlayer = true;
+                else
+                {
+                    enemyState = Constant.EnemyState.Move;
+                    isChasingPlayer = true;
 
-                FacePlayer();
-                float direction = Mathf.Sign(player.position.x - transform.position.x);
-                float chaseSpeed = (bossEnemyState == BossEnemyState.FirstStage)
-                    ? moveSpeed * meleeChaseSpeedMultiplier
-                    : moveSpeed;
+                    FacePlayer();
+                    float direction = Mathf.Sign(player.position.x - transform.position.x);
+                    float chaseSpeed = (bossEnemyState == BossEnemyState.FirstStage)
+                        ? moveSpeed * meleeChaseSpeedMultiplier
+                        : moveSpeed;
 
-                rb.velocity = new Vector2(chaseSpeed * direction, rb.velocity.y);
-                animator.SetFloat("Speed", Mathf.Abs(direction));
+                    rb.velocity = new Vector2(chaseSpeed * direction, rb.velocity.y);
+                    animator.SetFloat("Speed", Mathf.Abs(direction));
+                }
             }
             else
             {
                 enemyState = Constant.EnemyState.Move;
-            }
 
-            // Patrol with timed direction switch when not chasing
-            if (enemyState == Constant.EnemyState.Move && !isChasingPlayer)
-            {
                 patrolTimer += Time.deltaTime;
                 if (patrolTimer >= patrolDirectionDuration)
                 {
@@ -142,6 +146,16 @@ namespace DefaultNamespace
                 isAtk = false;
                 isMeleeAtk = false;
             }
+        }
+
+        private bool CanSeePlayer()
+        {
+            return Vector2.Distance(transform.position, player.position) < viewRange;
+        }
+
+        private bool IsInAttackRange(float distance)
+        {
+            return distance < attackRange;
         }
 
         private void FacePlayer()
@@ -203,10 +217,10 @@ namespace DefaultNamespace
             switch (bossEnemyState)
             {
                 case BossEnemyState.FirstStage:
-                    attackRange = 1f;
+                    attackRange = 2f;
                     break;
                 case BossEnemyState.SecondStage:
-                    attackRange = 3f;
+                    attackRange = 5f;
                     break;
             }
         }

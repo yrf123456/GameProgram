@@ -3,52 +3,51 @@ using UnityEngine;
 
 public class Enemy : MonoBehaviour
 {
-    public int maxHealth = 100; // Maximum health of the enemy
-    int currentHealth; // Current health
+    public int maxHealth = 100;
+    int currentHealth;
 
-    public float moveSpeed = 2f; // Movement speed
-    public float attackRange = 2f; // Attack range
-    public Transform player; // Player reference
-    private bool movingRight = true; // Whether moving right
-    private Rigidbody2D rb; // Rigidbody component
+    public float moveSpeed = 2f;
+    public float attackRange = 2f;
+    public Transform player;
+    private bool movingRight = true;
+    private Rigidbody2D rb;
 
-    public float patrolDistance = 5f; // Max patrol distance
-    private Vector2 startPosition; // Initial position
+    public float patrolDistance = 5f;
+    private Vector2 startPosition;
 
-    public HealthBar healthBarPrefab; // Health bar prefab
-    private HealthBar healthBar; // Instantiated health bar
+    public HealthBar healthBarPrefab;
+    private HealthBar healthBar;
 
-    public Constant.EnemyState enemyState = Constant.EnemyState.Move; // Current enemy state
+    public Constant.EnemyState enemyState = Constant.EnemyState.Move;
 
-    public float attackRate = 0.5f; // Attack interval
+    public float attackRate = 0.5f;
+    private float nextAttackTime = 0f;
 
-    private float nextAttackTime = 0f; // Time for next attack
+    public GameObject bulletPrefab;
+    public Transform firePoint;
 
-    public GameObject bulletPrefab; // Bullet prefab
-    public Transform firePoint; // Bullet spawn point
+    private float leftLimit;
+    private float rightLimit;
 
-    private float leftLimit; // Left patrol boundary
-    private float rightLimit; // Right patrol boundary
+    private Animator animator;
 
-    private Animator animator; // Animator component
+    public float verticalAttackTolerance = 0.5f;
 
-    public float verticalAttackTolerance = 0.5f; // Allowed vertical offset for attack
+    // Movement control flag (used by subclasses)
+    public bool canMove = true;
 
-    // Start is called before the first frame update
     public virtual void Start()
     {
-        player = GameObject.FindWithTag("PlayerRole").gameObject.transform; // Find player
-        SetDifficulty(); // Adjust attributes based on difficulty
-        currentHealth = maxHealth; // Initialize current health
-        rb = GetComponent<Rigidbody2D>(); // Get Rigidbody
-        animator = GetComponent<Animator>(); // Get Animator
-        startPosition = transform.position; // Record initial position
+        player = GameObject.FindWithTag("PlayerRole").gameObject.transform;
+        SetDifficulty();
+        currentHealth = maxHealth;
+        rb = GetComponent<Rigidbody2D>();
+        animator = GetComponent<Animator>();
+        startPosition = transform.position;
 
-        // Set patrol boundaries
         leftLimit = startPosition.x - patrolDistance;
         rightLimit = startPosition.x + patrolDistance;
 
-        // Create health bar
         healthBar = Instantiate(healthBarPrefab);
         healthBar.target = transform;
         healthBar.SetHealth(currentHealth, maxHealth);
@@ -58,34 +57,13 @@ public class Enemy : MonoBehaviour
     {
         if (player == null) return;
 
-        // Patrol logic
-        if (enemyState == Constant.EnemyState.Move)
-        {
-            float move = movingRight ? 1f : -1f;
-            rb.velocity = new Vector2(moveSpeed * move, rb.velocity.y);
-
-            // Flip sprite based on direction
-            Vector3 scale = transform.localScale;
-            scale.x = Mathf.Sign(move) * Mathf.Abs(scale.x);
-            transform.localScale = scale;
-            animator.SetFloat("Speed", Mathf.Abs(move));
-
-            // Change direction if reaching patrol boundary
-            if ((movingRight && transform.position.x >= rightLimit) ||
-                (!movingRight && transform.position.x <= leftLimit))
-            {
-                movingRight = !movingRight;
-            }
-        }
-        else
-        {
-            rb.velocity = Vector2.zero; // Stay still
-        }
-
-        // Check attack conditions
         float horizontalDistance = Mathf.Abs(transform.position.x - player.position.x);
         float verticalDistance = Mathf.Abs(transform.position.y - player.position.y);
-        if (horizontalDistance < attackRange && verticalDistance < verticalAttackTolerance)
+
+        float scoreAttack = ScoreAttack(horizontalDistance, verticalDistance);
+        float scorePatrol = ScorePatrol(horizontalDistance);
+
+        if (scoreAttack > scorePatrol)
         {
             if (Time.time >= nextAttackTime)
             {
@@ -95,18 +73,36 @@ public class Enemy : MonoBehaviour
         }
         else
         {
-            if (enemyState != Constant.EnemyState.Idle)
-                enemyState = Constant.EnemyState.Move;
+            if (canMove)
+                Patrol();
+            else
+                enemyState = Constant.EnemyState.Idle;
         }
     }
 
-    // Attack behavior
+    protected virtual void Patrol()
+    {
+        enemyState = Constant.EnemyState.Move;
+
+        float move = movingRight ? 1f : -1f;
+        rb.velocity = new Vector2(moveSpeed * move, rb.velocity.y);
+
+        Vector3 scale = transform.localScale;
+        scale.x = Mathf.Sign(move) * Mathf.Abs(scale.x);
+        transform.localScale = scale;
+        animator.SetFloat("Speed", Mathf.Abs(move));
+
+        if ((movingRight && transform.position.x >= rightLimit) ||
+            (!movingRight && transform.position.x <= leftLimit))
+        {
+            movingRight = !movingRight;
+        }
+    }
+
     public virtual void Attack()
     {
-        Debug.Log("Player is within attack range!");
         enemyState = Constant.EnemyState.Attack;
 
-        // Flip toward the player
         float direction = player.position.x - transform.position.x;
         movingRight = direction > 0f;
 
@@ -114,18 +110,21 @@ public class Enemy : MonoBehaviour
         scale.x = Mathf.Sign(direction) * Mathf.Abs(scale.x);
         transform.localScale = scale;
 
-        // Fire a bullet
         GameObject bullet = Instantiate(bulletPrefab, firePoint.position, Quaternion.identity);
         bullet.transform.localScale = new Vector3(Mathf.Sign(transform.localScale.x), 1, 1);
+
+        Debug.Log("Enemy attacks player!");
     }
 
-    void OnCollisionEnter2D(Collision2D collision)
+    private float ScoreAttack(float hDist, float vDist)
     {
-        // Uncomment if you want to change direction on wall collision
-        // if (collision.gameObject.CompareTag("Wall"))
-        // {
-        //     movingRight = !movingRight;
-        // }
+        if (hDist > attackRange || vDist > verticalAttackTolerance) return 0f;
+        return 1f - (hDist / attackRange);
+    }
+
+    private float ScorePatrol(float hDist)
+    {
+        return hDist > attackRange ? 1f : 0.2f;
     }
 
     public void TakeDamage(int damage)
@@ -141,11 +140,10 @@ public class Enemy : MonoBehaviour
 
     public void Die()
     {
-        Destroy(gameObject); // Destroy enemy object
-        Destroy(healthBar.gameObject); // Destroy health bar
+        Destroy(gameObject);
+        Destroy(healthBar.gameObject);
     }
 
-    // Initialize attributes based on difficulty
     public void SetDifficulty()
     {
         float difficulty = GameManager.Instance.currDifficulty;
@@ -156,23 +154,18 @@ public class Enemy : MonoBehaviour
 #if UNITY_EDITOR
     private void OnDrawGizmosSelected()
     {
-        // Get current position
         Vector3 enemyPosition = transform.position;
 
-        // Calculate patrol range
         float leftBoundX = enemyPosition.x - patrolDistance;
         float rightBoundX = enemyPosition.x + patrolDistance;
-
         Vector3 leftBound = new Vector3(leftBoundX, enemyPosition.y, enemyPosition.z);
         Vector3 rightBound = new Vector3(rightBoundX, enemyPosition.y, enemyPosition.z);
-
         Gizmos.color = Color.green;
         Gizmos.DrawLine(leftBound, rightBound);
 
         Gizmos.color = Color.yellow;
         Gizmos.DrawSphere(enemyPosition, 0.2f);
 
-        // Draw attack range
         float leftBoundAX = enemyPosition.x - attackRange;
         float rightBoundAX = enemyPosition.x + attackRange;
         Vector3 leftBoundA = new Vector3(leftBoundAX, enemyPosition.y, enemyPosition.z);
